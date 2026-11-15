@@ -19,10 +19,7 @@ st.set_page_config(
     layout="wide"
 )
 
-try:
-    FEEDBACK_TO_ADDRESS = st.secrets.get("FEEDBACK_TO_EMAIL", "support@example.com")
-except Exception:
-    FEEDBACK_TO_ADDRESS = os.environ.get("FEEDBACK_TO_EMAIL", "support@example.com")
+FEEDBACK_TO_ADDRESS = "sv2965970@gmail.com"
 
 
 def render_light_table(df, max_rows=None):
@@ -361,6 +358,16 @@ div.stButton > button:active{
                 st.info("No logs matched the timeline frame filter selected.")
                 return
 
+            # FIX #1: only DEBIT rows are expenses. Credits (salary, incoming
+            # transfers) must not be added into spending charts, totals or forecast.
+            exp_df = filtered_df[filtered_df['Transaction Type'] == 'debit'].copy()
+            total_debit = exp_df['Amount'].sum()
+            total_credit = filtered_df.loc[filtered_df['Transaction Type'] == 'credit', 'Amount'].sum()
+
+            if exp_df.empty:
+                st.info("No debit (expense) transactions in this period.")
+                return
+
             col1, col2 = st.columns(2)
 
             CHART_FONT = dict(family="Arial, sans-serif", color="#0F172A")
@@ -385,7 +392,7 @@ div.stButton > button:active{
                 fig.update_yaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"))
                 return fig
 
-            a = filtered_df.groupby(['month', 'month_name'])['Amount'].sum().reset_index().sort_values('month')
+            a = exp_df.groupby(['month', 'month_name'])['Amount'].sum().reset_index().sort_values('month')
             fig = px.line(
                 a, x="month_name", y="Amount",
                 title="Expense Distribution Over Month", markers=True,
@@ -395,7 +402,7 @@ div.stButton > button:active{
             fig.update_layout(xaxis_title="Month", yaxis_title="Total Amount (₹)")
             style_chart(fig, "📈 Expense Distribution Over Month")
 
-            c = filtered_df.groupby(['Description'])['Amount'].sum().reset_index()
+            c = exp_df.groupby(['Description'])['Amount'].sum().reset_index()
             c = c.sort_values(by="Amount", ascending=False)
 
             if len(c) > 8:
@@ -438,6 +445,7 @@ div.stButton > button:active{
             col3, col4 = st.columns(2)
              
             d = filtered_df.groupby(['Transaction Type'])['Amount'].sum().reset_index()
+            d['Transaction Type'] = d['Transaction Type'].str.capitalize()
             fig3 = px.pie(
                 d, names='Transaction Type', values='Amount',
                 title='Credit vs Debit', color_discrete_sequence=["#2563EB", "#F59E0B", "#10B981"]
@@ -449,7 +457,7 @@ div.stButton > button:active{
             )
             style_chart(fig3, "💳 Credit vs Debit")
 
-            daily = filtered_df.groupby(['Date'])['Amount'].sum().reset_index()
+            daily = exp_df.groupby(['Date'])['Amount'].sum().reset_index()
             fig4 = px.line(
                 daily, x='Date', y='Amount', markers=True,
                 title="Daily Spending Profile Flow", color_discrete_sequence=["#10B981"]
@@ -467,7 +475,7 @@ div.stButton > button:active{
 
             st.write("")
 
-            b_hist = b.copy()
+            b_hist = b[b['Transaction Type'] == 'debit'].copy()
             b_hist['year_month'] = b_hist['Date'].dt.to_period('M')
             monthly_totals = (
                 b_hist.groupby('year_month')['Amount'].sum()
@@ -524,22 +532,23 @@ div.stButton > button:active{
                 st.session_state.chat_history = []
 
             summary_by_type = filtered_df.groupby('Transaction Type')['Amount'].sum()
-            summary_by_desc = filtered_df.groupby('Description')['Amount'].sum().sort_values(ascending=False)
-            summary_by_month = filtered_df.groupby('month_name')['Amount'].sum()
+            summary_by_desc = exp_df.groupby('Description')['Amount'].sum().sort_values(ascending=False)
+            summary_by_month = exp_df.groupby('month_name')['Amount'].sum()
 
             data_summary = f"""
 Filter applied: {view}
 Date range: {filtered_df['Date'].min().date()} to {filtered_df['Date'].max().date()}
 Total transactions: {len(filtered_df)}
-Total amount: ₹{filtered_df['Amount'].sum():,.2f}
+Total spent (debits only): ₹{total_debit:,.2f}
+Total received (credits): ₹{total_credit:,.2f}
 
-Spending by Transaction Type:
+Total amount by Transaction Type (credit = money in, debit = money out):
 {summary_by_type.to_string()}
 
-Spending by Month:
+Spending (debits only) by Month:
 {summary_by_month.to_string()}
 
-Top merchants/descriptions by total spend:
+Top merchants/descriptions by spend (debits only):
 {summary_by_desc.head(15).to_string()}
 """.strip()
 
@@ -554,10 +563,8 @@ Top merchants/descriptions by total spend:
                 with st.chat_message("user"):
                     st.markdown(question)
 
-                try:
-                    chat_api_key = st.secrets["GEMINI_API_KEY"]
-                except Exception:
-                    chat_api_key = os.environ.get("GEMINI_API_KEY", "")
+              #key
+                chat_api_key = "AQ.Ab8RN6LWQg9QxUjAQQ1OvtHhCK6hHrd15a9TrGWAgZQRg22_BQ"
 
                 prompt = f"""You are a helpful personal finance assistant embedded in an expense tracker app.
 Answer the user's question using ONLY the transaction summary below - do not invent numbers.
@@ -625,9 +632,9 @@ QUESTION: {question}
                         
                         Each object must have exactly these keys:
                         - "Date": The exact date of transaction formatted as DD.MM.YYYY (If year is missing, append 2026).
-                        - "Description": Cleaned merchant name or transaction purpose (e.g., convert "UPI-STORE-1234@okaxis" to "Store", "FLIPKART INTERNET" to "Flipkart").
+                        - "Description": Cleaned merchant name or transaction purpose (e.g., convert "UPI-TAMILMATHI-1234@okaxis" to "Tamilmathi", "FLIPKART INTERNET" to "Flipkart").
                         - "Category": Categorize the transaction into EXACTLY one of these standard buckets based on these rules:
-                          * "Groceries & Dining": For local supermarkets, vegetable vendors, grocery stores, restaurants, Swiggy, Zomato, food courts.
+                          * "Groceries & Dining": For local supermarkets, vegetable vendors, Tamilmathi, grocery stores, restaurants, Swiggy, Zomato, food courts.
                           * "Shopping & Electronics": For Flipkart, Amazon, Haier, home appliances, clothing, retail stores, Myntra.
                           * "Utilities & Bills": For mobile recharge (Jio, Airtel), electricity boards, Wi-Fi, rent, gas, DTH, insurance premium.
                           * "Entertainment & Leisure": For movie theatres, Netflix, stories, books, hotels, travel tickets, Spotify.
@@ -902,20 +909,12 @@ QUESTION: {question}
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-        contact_email = "support@example.com"
-        contact_phone = "+91 00000 00000"
-        try:
-            contact_email = st.secrets.get("CONTACT_EMAIL", contact_email)
-            contact_phone = st.secrets.get("CONTACT_PHONE", contact_phone)
-        except Exception:
-            pass
-
         st.markdown(
-            f"""
+            """
             <div class="profile-card" style="text-align:center;">
                 <div class="profile-section-title">📞 Contact Us</div>
-                <p style="color:#334155;font-size:15px;margin:6px 0;">📧 {contact_email}</p>
-                <p style="color:#334155;font-size:15px;margin:6px 0;">📱 {contact_phone}</p>
+                <p style="color:#334155;font-size:15px;margin:6px 0;">📧 sv2965970@gmail.com</p>
+                <p style="color:#334155;font-size:15px;margin:6px 0;">📱 +91 44453 65781</p>
             </div>
             """,
             unsafe_allow_html=True
