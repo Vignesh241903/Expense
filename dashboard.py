@@ -14,6 +14,22 @@ from email.mime.text import MIMEText
 from google import genai
 from google.genai import types
 
+CATEGORY_KEYWORDS = {
+    "Fuel & Transport": ["petroleum", "petrol", "filling", "fuel", "bunk",
+                         "indian railways", "irctc", "redbus", "ola cabs", "rapido", "chennai metro"],
+    "Health": ["medplus", "pharm", "medical", "hospital", "clinic", "health"],
+    "Cash Withdrawal": ["atm withdrawal", "atm wdl", "cash withdrawal"],
+}
+
+def fix_category(row):
+    if str(row["Transaction Type"]).lower() == "credit":
+        return row["Category"]          # don't touch salary/income
+    desc = str(row["Description"]).lower()
+    for cat, words in CATEGORY_KEYWORDS.items():
+        if any(w in desc for w in words):
+            return cat
+    return row["Category"]
+
 st.set_page_config(
     page_title="Expense Tracker",
     layout="wide"
@@ -482,17 +498,17 @@ div.stButton > button:active{
                 .reset_index()
                 .sort_values('year_month')
             )
+            last_date = b['Date'].max()
+            month_incomplete = last_date != last_date + pd.offsets.MonthEnd(0)
+            complete_totals = monthly_totals.iloc[:-1] if month_incomplete else monthly_totals
 
             _, fc_center, _ = st.columns([1, 6, 1])
             with fc_center:
-                if len(monthly_totals) >= 2:
-                    x = np.arange(len(monthly_totals))
+                if len(complete_totals) >= 2:
                     y = monthly_totals['Amount'].values
-                    slope, intercept = np.polyfit(x, y, 1)
-
                     n_future = 3
-                    future_x = np.arange(len(monthly_totals), len(monthly_totals) + n_future)
-                    future_y = np.clip(slope * future_x + intercept, 0, None)
+                    avg_last3 = complete_totals['Amount'].tail(3).mean()
+                    future_y = np.full(n_future, avg_last3)
                     future_periods = pd.period_range(
                         monthly_totals['year_month'].iloc[-1] + 1, periods=n_future, freq='M'
                     )
@@ -514,8 +530,7 @@ div.stButton > button:active{
 
                     st.plotly_chart(fig5, use_container_width=True)
                     st.caption(
-                        "Forecast is a simple linear trend over your full transaction history "
-                        "(not just the current filter) — treat it as a rough projection, not a guarantee."
+                       "Forecast = average of your last 3 completed months. It's a rough estimate, not a guarantee."
                     )
                 else:
                     st.info("📉 Need at least 2 months of transaction history to generate a spending forecast.")
@@ -631,19 +646,23 @@ QUESTION: {question}
                         Do not wrap it in markdown code blocks like ```json. Just raw valid JSON.
                         
                         Each object must have exactly these keys:
-                        - "Date": The exact date of transaction formatted as DD.MM.YYYY (If year is missing, append 2026).
+                         - "Date": The exact date of transaction formatted as DD.MM.YYYY (If year is missing, append 2026).
                         - "Description": Cleaned merchant name or transaction purpose (e.g., convert "UPI-TAMILMATHI-1234@okaxis" to "Tamilmathi", "FLIPKART INTERNET" to "Flipkart").
                         - "Category": Categorize the transaction into EXACTLY one of these standard buckets based on these rules:
                           * "Groceries & Dining": For local supermarkets, vegetable vendors, Tamilmathi, grocery stores, restaurants, Swiggy, Zomato, food courts.
                           * "Shopping & Electronics": For Flipkart, Amazon, Haier, home appliances, clothing, retail stores, Myntra.
                           * "Utilities & Bills": For mobile recharge (Jio, Airtel), electricity boards, Wi-Fi, rent, gas, DTH, insurance premium.
-                          * "Entertainment & Leisure": For movie theatres, Netflix, stories, books, hotels, travel tickets, Spotify.
+                          * "Entertainment & Leisure": For movie theatres, Netflix, books, hotels, Spotify.
+                          * "Fuel & Transport": For petrol/diesel bunks, trains, buses, cabs, metro, travel tickets.
+                          * "Health": For pharmacies, medical stores, hospitals, clinics, lab tests.
+                          * "Cash Withdrawal": For ATM withdrawals.
+                          * "Person-to-Person": For UPI payments to individual people (friends, family, names of persons).
+                          * "Transfer & Others": For bank fees or anything that fits none of the above.
                           * "Salary & Income": For salary credits, bank interest payments, cash deposits, dividends, cashbacks.
-                          * "Transfer & Others": For generic UPI transactions to friends/family, bank fees, ATM withdrawals, or uncategorized items.
                         - "Transaction Type": Must be exactly either "Debit" or "Credit".
                         - "Amount": The transaction cost as a floating-point number.
                         - "Balance": The running account balance right after that transaction as a floating-point number.
-
+                        
                         Bank Statement Text:
                         {full_text_content}
                         """
@@ -681,6 +700,7 @@ QUESTION: {question}
                     combined_df = new_df
 
                 combined_df = combined_df.drop_duplicates(subset=["Date", "Description", "Amount", "Balance"])
+                combined_df["Category"] = combined_df.apply(fix_category, axis=1)
 
                 combined_df.to_csv(csv_path, index=False)
                 
