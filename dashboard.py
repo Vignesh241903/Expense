@@ -408,15 +408,28 @@ div.stButton > button:active{
                 fig.update_yaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"))
                 return fig
 
-            a = exp_df.groupby(['month', 'month_name'])['Amount'].sum().reset_index().sort_values('month')
-            fig = px.line(
-                a, x="month_name", y="Amount",
-                title="Expense Distribution Over Month", markers=True,
-                color_discrete_sequence=["#2563EB"]
-            )
-            fig.update_traces(line=dict(width=3), marker=dict(size=9, color="#2563EB", line=dict(width=2, color="#FFFFFF")))
-            fig.update_layout(xaxis_title="Month", yaxis_title="Total Amount (₹)")
-            style_chart(fig, "📈 Expense Distribution Over Month")
+            if view == "Monthly":
+                   wk = exp_df.copy()
+                   wk['week'] = ((wk['Date'].dt.day - 1) // 7 + 1).clip(upper=4)
+                   a = wk.groupby('week')['Amount'].sum().reindex([1, 2, 3, 4], fill_value=0).reset_index()
+                   a['week'] = 'Week ' + a['week'].astype(str)
+                   fig = px.bar(
+                   a, x="week", y="Amount",
+                   title="Weekly Spending",
+                   color_discrete_sequence=["#2563EB"]
+                )
+                   fig.update_layout(xaxis_title="Week of month", yaxis_title="Total Amount (₹)")
+                   style_chart(fig, "📅 Weekly Spending")
+            else: 
+                 a = exp_df.groupby(['month', 'month_name'])['Amount'].sum().reset_index().sort_values('month')
+                 fig = px.line(
+                    a, x="month_name", y="Amount",
+                    title="Expense Distribution Over Month", markers=True,
+                    color_discrete_sequence=["#2563EB"]
+                )
+                  fig.update_traces(line=dict(width=3), marker=dict(size=9, color="#2563EB", line=dict(width=2, color="#FFFFFF")))
+                  fig.update_layout(xaxis_title="Month", yaxis_title="Total Amount (₹)")
+                  style_chart(fig, "📈 Expense Distribution Over Month")
 
             c = exp_df.groupby(['Description'])['Amount'].sum().reset_index()
             c = c.sort_values(by="Amount", ascending=False)
