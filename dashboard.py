@@ -404,8 +404,8 @@ div.stButton > button:active{
                     legend=dict(font=dict(color="#334155")),
                     margin=dict(t=70, b=40, l=40, r=20),
                 )
-                fig.update_xaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"))
-                fig.update_yaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"))
+                fig.update_xaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"), title_font=dict(color="#334155", size=13))
+                fig.update_yaxes(showgrid=True, gridcolor="#E2E8F0", linecolor="#E2E8F0", tickfont=dict(color="#64748B"), title_font=dict(color="#334155", size=13))
                 return fig
 
             if view == "Monthly":
